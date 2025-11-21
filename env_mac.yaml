@@ -7,9 +7,9 @@ dependencies:
   - ase=3.23.0=pyhd8ed1ab_0
   - blas=1.0=openblas
   - blinker=1.8.2=pyhd8ed1ab_0
-  - boost=1.82.0=py39hecd8cb5_2
-  - boost-cpp=1.82.0=ha357a0b_2
-  - bottleneck=1.3.7=py39h7b7cdfe_0
+  # - boost=1.82.0=py39hecd8cb5_2
+  # - boost-cpp=1.82.0=ha357a0b_2
+  # - bottleneck=1.3.7=py39h7b7cdfe_0
   - brotli=1.1.0=h00291cd_2
   - brotli-bin=1.1.0=h00291cd_2
   - bzip2=1.0.8=hfdf4475_7
