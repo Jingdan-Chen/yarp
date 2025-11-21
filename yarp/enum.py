@@ -68,27 +68,28 @@ def form_bonds(yarpecules,react=[],hashes=None,inter=False,intra=True,def_only=F
         hashes = set([])
         
     # This loop only performs bond formation steps within individual yarpecule objects
-    if intra:
+    if intra: # JINGDAN: trying to fix the issue of only counting the 0th bond_mat resonance structure
         for count_y,y in enumerate(yarpecules):
             bonds = set([])            
             # perform radical bond formations
-            for donor in [ count for count,_ in enumerate(y.n_e_donate) if count in react[count_y] and ( _ % 2) == 1 and y.n_e_accept[count] > 0 ]:
-                for acceptor in [ count for count,_ in enumerate(y.n_e_accept) if count in react[count_y] and _ > 0 and y.n_e_donate[count] > 0 ]:
-                    if acceptor not in y.atom_neighbors[donor] and (donor,acceptor) not in bonds:
-                        adj_mat = copy(y.adj_mat)
-                        adj_mat[donor,acceptor] = 1
-                        adj_mat[acceptor,donor] = 1
-                        bonds.update([(donor,acceptor),(acceptor,donor)])
-                        product = yarpecule((adj_mat,y.geo,y.elements,y.q),canon=False)
-                        if product.hash not in hashes:
-                            yield product
-                        if hash_filter:
-                            hashes.add(product.hash)
+            for i in range(len(y.bond_mats)):
+                for donor in [ count for count,_ in enumerate(y.n_e_donate_all[i]) if count in react[count_y] and ( _ % 2) == 1 and y.n_e_accept_all[i][count] > 0 ]:
+                    for acceptor in [ count for count,_ in enumerate(y.n_e_accept_all[i]) if count in react[count_y] and _ > 0 and y.n_e_donate_all[i][count] > 0 ]:
+                        if acceptor not in y.atom_neighbors[donor] and (donor,acceptor) not in bonds:
+                            adj_mat = copy(y.adj_mat)
+                            adj_mat[donor,acceptor] = 1
+                            adj_mat[acceptor,donor] = 1
+                            bonds.update([(donor,acceptor),(acceptor,donor)])
+                            product = yarpecule((adj_mat,y.geo,y.elements,y.q),canon=False)
+                            if product.hash not in hashes:
+                                yield product
+                            if hash_filter:
+                                hashes.add(product.hash)
 
 
             # perform lone-pair bond formations
             for donor in [ count for count,_ in enumerate(y.n_e_donate) if count in react[count_y] and _ >= 2 ]:                
-                for acceptor in [ count for count,_ in enumerate(y.n_e_accept) if count in react[count_y] and _ > 1 ]:
+                for acceptor in [ count for count,_ in enumerate(y.n_e_accept) if count in react[count_y] and _ >= 2 ]:
                     if acceptor not in y.atom_neighbors[donor] and (donor,acceptor) not in bonds:
                         adj_mat = copy(y.adj_mat)
                         adj_mat[donor,acceptor] = 1
@@ -114,62 +115,69 @@ def form_bonds(yarpecules,react=[],hashes=None,inter=False,intra=True,def_only=F
                     # In the first iteration y1 acts as the donor and y2 as acceptor. In the second the reverse.
                     for c in [((count_y1,y1),(count_y2,y2)),((count_y2,y2),(count_y1,y1))]:
 
-                        # perform radical bond formations with y1 acting as donor
-                        for donor in [ count for count,_ in enumerate(c[0][1].n_e_donate) if count in react[c[0][0]] and ( _ % 2) == 1 and c[0][1].n_e_accept[count] > 0 ]:                
-                            for acceptor in [ count for count,_ in enumerate(c[1][1].n_e_accept) if count in react[c[1][0]] and _ > 0 and c[1][1].n_e_donate[count] > 0 ]:
-                                if ((c[0][0],donor),(c[1][0],acceptor)) not in bonds:
-                                    adj_mat = merge_arrays([c[0][1].adj_mat,c[1][1].adj_mat])
-                                    adj_mat[donor,acceptor+len(c[0][1])] = 1
-                                    adj_mat[acceptor+len(c[0][1]),donor] = 1
-                                    bonds.update([((c[0][0],donor),(c[1][0],acceptor)),((c[1][0],acceptor),(c[0][0],donor))])                                                                        
-                                    product = yarpecule((adj_mat,vstack([c[0][1].geo,c[1][1].geo]),c[0][1].elements+c[1][1].elements,c[0][1].q+c[1][1].q),canon=False)
-                                    if product.hash not in hashes:
-                                        yield product
-                                    if hash_filter:
-                                        hashes.add(product.hash)
+                        for i in range(len(c[0][1].bond_mats)):
+                            for j in range(len(c[1][1].bond_mats)):
+                                # perform radical bond formations with y1 acting as donor
+                                for donor in [ count for count,_ in enumerate(c[0][1].n_e_donate_all[i]) if count in react[c[0][0]] and ( _ % 2) == 1 and c[0][1].n_e_accept_all[i][count] > 0 ]:                
+                                    for acceptor in [ count for count,_ in enumerate(c[1][1].n_e_accept_all[j]) if count in react[c[1][0]] and _ > 0 and c[1][1].n_e_donate_all[j][count] > 0 ]:
+                                        if ((c[0][0],donor),(c[1][0],acceptor)) not in bonds:
+                                            adj_mat = merge_arrays([c[0][1].adj_mat,c[1][1].adj_mat])
+                                            adj_mat[donor,acceptor+len(c[0][1])] = 1
+                                            adj_mat[acceptor+len(c[0][1]),donor] = 1
+                                            bonds.update([((c[0][0],donor),(c[1][0],acceptor)),((c[1][0],acceptor),(c[0][0],donor))])                                                                        
+                                            product = yarpecule((adj_mat,vstack([c[0][1].geo,c[1][1].geo]),c[0][1].elements+c[1][1].elements,c[0][1].q+c[1][1].q),canon=False)
+                                            if product.hash not in hashes:
+                                                yield product
+                                            if hash_filter:
+                                                hashes.add(product.hash)
 
-                        # perform lone-pair bond formations
-                        for donor in [ count for count,_ in enumerate(c[0][1].n_e_donate) if count in react[c[0][0]] and _ >= 2 ]:                
-                            for acceptor in [ count for count,_ in enumerate(c[1][1].n_e_accept) if count in react[c[1][0]] and _ > 1 ]:
-                                if ((c[0][0],donor),(c[1][0],acceptor)) not in bonds:
-                                    adj_mat = merge_arrays([c[0][1].adj_mat,c[1][1].adj_mat])
-                                    adj_mat[donor,acceptor+len(c[0][1])] = 1
-                                    adj_mat[acceptor+len(c[0][1]),donor] = 1
-                                    bonds.update([((c[0][0],donor),(c[1][0],acceptor)),((c[1][0],acceptor),(c[0][0],donor))])                                                                        
-                                    product = yarpecule((adj_mat,vstack([c[0][1].geo,c[1][1].geo]),c[0][1].elements+c[1][1].elements,c[0][1].q+c[1][1].q),canon=False)
-                                    if product.hash not in hashes:
-                                        yield product
-                                    if hash_filter:
-                                        hashes.add(product.hash)
+                                # perform lone-pair bond formations
+                                for donor in [ count for count,_ in enumerate(c[0][1].n_e_donate_all[i]) if count in react[c[0][0]] and _ >= 2 ]:                
+                                    for acceptor in [ count for count,_ in enumerate(c[1][1].n_e_accept_all[j]) if count in react[c[1][0]] and _ > 1 ]:
+                                        if ((c[0][0],donor),(c[1][0],acceptor)) not in bonds:
+                                            adj_mat = merge_arrays([c[0][1].adj_mat,c[1][1].adj_mat])
+                                            adj_mat[donor,acceptor+len(c[0][1])] = 1
+                                            adj_mat[acceptor+len(c[0][1]),donor] = 1
+                                            bonds.update([((c[0][0],donor),(c[1][0],acceptor)),((c[1][0],acceptor),(c[0][0],donor))])                                                                        
+                                            product = yarpecule((adj_mat,vstack([c[0][1].geo,c[1][1].geo]),c[0][1].elements+c[1][1].elements,c[0][1].q+c[1][1].q),canon=False)
+                                            if product.hash not in hashes:
+                                                yield product
+                                            if hash_filter:
+                                                hashes.add(product.hash)
 
 def form_n_bonds(yarpecules, n=2, react=[], hashes=None, inter=True, intra=True, def_only=False, hash_filter=True):
-    
     yarpecules = prepare_list(yarpecules) 
 
-    # Prepare react list if it isn't the same length as the number of yarpecules
-    if len(react) != len(yarpecules):
-        react = [ set(range(len(y))) for y in yarpecules ]
+    if n<0:
+        raise ValueError("form_n_bonds() function: n must be >= 0")
+    # JINGDAN: if n==0, return the original yarpecules
+    elif n==0:
+        return yarpecules
+    else:
+        # Prepare react list if it isn't the same length as the number of yarpecules
+        if len(react) != len(yarpecules):
+            react = [ set(range(len(y))) for y in yarpecules ]
 
-    if hashes is None:
-        hashes = set([ _.hash for _ in yarpecules])
+        if hashes is None:
+            hashes = set([ _.hash for _ in yarpecules])
 
-    # Loop over the originals
-    new = []
-    
-    for y in yarpecules:
-        newest = list(form_bonds(y,hashes=hashes, def_only=def_only))
-        hashes.update([ _.hash for _ in newest ])
-        new += newest
-    # Loop over the new molecules until no new structures are enumerated
-    nf=1
-    while nf<n:
-        for y in new:
+        # Loop over the originals
+        new = []
+        
+        for y in yarpecules:
             newest = list(form_bonds(y,hashes=hashes, def_only=def_only))
             hashes.update([ _.hash for _ in newest ])
             new += newest
-        nf=nf+1
-    
-    return new
+        # Loop over the new molecules until no new structures are enumerated
+        nf=1
+        while nf<n:
+            for y in new:
+                newest = list(form_bonds(y,hashes=hashes, def_only=def_only))
+                hashes.update([ _.hash for _ in newest ])
+                new += newest
+            nf=nf+1
+        
+        return new
 
 def form_bonds_all(yarpecules,react=[],hashes=None,inter=True,intra=True,def_only=False,hash_filter=True):
     """
@@ -229,7 +237,9 @@ def form_bonds_all(yarpecules,react=[],hashes=None,inter=True,intra=True,def_onl
         hashes = set([ _.hash for _ in yarpecules])
 
     # Loop over the originals
-    new = []    
+    # new = []
+    # JINGDAN: if n==0, return the original yarpecules
+    new = yarpecules
     for y in yarpecules:
         newest = list(form_bonds(y,hashes=hashes))
         hashes.update([ _.hash for _ in newest ])
@@ -298,13 +308,16 @@ def break_bonds(yarpecules,n=1,react=[],hashes=None,break_higher_order=False,rem
     for count_y,y in enumerate(yarpecules):
 
         # Collect distinct bonds involving atoms in react 
-        bonds = [ (count_r,count_c) for count_r,row in enumerate(y.adj_mat) for count_c,col in enumerate(row) if ( count_r in react[count_y] and count_c in react[count_y] and col > 0 and count_c > count_r ) ] 
+        bonds = [ (count_r,count_c) 
+            for count_r,row in enumerate(y.adj_mat) 
+                for count_c,col in enumerate(row) if ( 
+                    (count_r in react[count_y]) and (count_c in react[count_y]) and (col > 0) and (count_c > count_r) ) ] 
         if break_higher_order is False:
             tmp_bonds=[]
             for i in bonds:
                 #print(y.bo_dict[i[0]][i[1]])
                 if y.bo_dict[i[0]][i[1]]==None: continue
-                elif 1 in y.bo_dict[i[0]][i[1]]:
+                elif 1 in y.bo_dict[i[0]][i[1]]: # bo_dict is a dictionary considering multiple resonance structures, thus using "in"
                     tmp_bonds.append(i)
             bonds=tmp_bonds
             #bonds = [ _ for _ in bonds if 1 in y.bo_dict[_[0]][_[1]] ]

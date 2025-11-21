@@ -17,6 +17,10 @@ from yarp.input_parsers import xyz_parse,xyz_q_parse,xyz_from_smiles,mol_parse
 from yarp.misc import merge_arrays, prepare_list
 from yarp.smiles import smiles2adjmat
 
+import io
+from PIL import Image
+from IPython.core.display import Image as IPythonImage
+
 def main(argv):
 
     # run on one molecule
@@ -49,7 +53,7 @@ class yarpecule:
 
     adj_mat: array
              This array is indexed to the atoms in the `yarpecule` and has a one at row i and column j if there is 
-             a bond (of any kind) between the i-th and j-th atoms. 
+             a bond (of any kind) between the i-th and j-th atoms. ONE-HOT ENCODED, NO BOND ORDER INFORMATION.
 
     geo: array
          An nx3 array of cartesian coordinates (in units of Angstroms), where n is the number of atoms.
@@ -115,7 +119,7 @@ class yarpecule:
     """        
 
     # Constructor
-    def __init__(self,mol,canon=True,mode="rdkit"):
+    def __init__(self,mol,canon=True,mode="rdkit", sanitize=True):
 
         # direct branch: user passes core attributes directly
         if isinstance(mol,(tuple,list)) and len(mol) == 4:
@@ -141,7 +145,7 @@ class yarpecule:
 
         # mol branch
         elif len(mol)>4 and mol[-4:] == ".mol":
-            self.elements, self.geo, self.q, _, _ = mol_parse(mol)
+            self.elements, self.geo, self.adj_mat, self.q = mol_parse(mol, sanitize=sanitize)
 
         # SMILES branch
         else:
@@ -180,11 +184,19 @@ class yarpecule:
         self.hash = yarpecule_hash(self)  # we'll wrap this in the hash() call after more extensive testing.        
 
         # THESE NEED TO BE UPDATED TO ACCOUNT FOR ALL RESONANCE STRUCTURES
-        self.n_e_accept = return_n_e_accept(self.bond_mats[0],self.elements) # return lewis acidic atoms. Used for enumeration.
-        self.n_e_donate = return_n_e_donate(self.bond_mats[0],self.elements) # return lewis basic atoms. Used for enumeration.
-        self.fc = return_formals(self.bond_mats[0],self.elements) # return the formal charges
+        # self.n_e_accept = return_n_e_accept(self.bond_mats[0],self.elements) # return lewis acidic atoms. Used for enumeration.
+        # self.n_e_donate = return_n_e_donate(self.bond_mats[0],self.elements) # return lewis basic atoms. Used for enumeration.
+        # self.fc = return_formals(self.bond_mats[0],self.elements) # return the formal charges
+
+        self.n_e_accept_all = [return_n_e_accept(self.bond_mats[i],self.elements) for i in range(len(self.bond_mats))] # return lewis acidic atoms. Used for enumeration.
+        self.n_e_donate_all = [return_n_e_donate(self.bond_mats[i],self.elements) for i in range(len(self.bond_mats))] # return lewis basic atoms. Used for enumeration.
+        self.fc_all = [return_formals(self.bond_mats[i],self.elements) for i in range(len(self.bond_mats))] # return the formal charges
+        self.n_e_accept = self.n_e_accept_all[0]
+        self.n_e_donate = self.n_e_donate_all[0]
+        self.fc = self.fc_all[0]
+        
         self.atom_neighbors = [ set([ind] + [ count for count,_ in enumerate(self.adj_mat[ind]) if _ == 1 ]) for ind in range(len(self)) ] # return set of neighbors for each atom (adj_list can replace this if we store it permanently)
-        self.bo_dict = return_bo_dict(self)        
+        self.bo_dict = return_bo_dict(self)  # return the bond order dictionary
 
     def find_lewis(self):
         """
@@ -292,7 +304,66 @@ class yarpecule:
         elements = [ e for y in all_y for e in y.elements ]
         q = int(sum([ _.q for _ in all_y ]))
         return yarpecule((adj_mat,geo,elements,q),canon=canon)
+
+    def to_xyz(self, name='tmp.xyz'):
+        """
+        Method for writing the yarpecule geometry to an xyz file.
+
+        Parameters
+        ----------
+        name : str
+            The filename to write to. Should end in .xyz
+
+        Returns
+        -------
+        None
+        """
+        if not name.endswith(".xyz"):
+            name += ".xyz"
+        with open(name, 'w') as f:
+            f.write(f"{len(self)}\n\n")
+            for i in range(len(self)):
+                f.write(f"{self.elements[i].capitalize()} {self.geo[i][0]:.6f} {self.geo[i][1]:.6f} {self.geo[i][2]:.6f}\n")
+        return
         
+    def to_mol(self, name='tmp.mol'):
+        """
+        Method for writing the yarpecule geometry to a mol file.
+        """
+        if not name.endswith(".mol"):
+            name += ".mol"
+        with open(name, 'w') as f:
+            # Header block
+            f.write(f"{name}\n")
+            f.write("YARP export\n")
+            f.write("\n")
+            
+            n_atoms = len(self.elements)
+            # Count bonds from adjacency matrix (upper triangle, no double counting)
+            bonds = []
+            bond_mat = self.bond_mats[0] if hasattr(self, 'bond_mats') and len(self.bond_mats) > 0 else self.adj_mat
+            for i in range(n_atoms):
+                for j in range(i+1, n_atoms):
+                    if self.adj_mat[i, j] != 0:
+                        # Bond order from bond_mat, fallback to 1 if not available
+                        order = int(bond_mat[i, j]) if bond_mat is not None else 1
+                        bonds.append((i, j, order))
+            n_bonds = len(bonds)
+            # Counts line (V2000 format)
+            f.write(f"{n_atoms:>3}{n_bonds:>3}  0  0  0  0            999 V2000\n")
+            # Atom block
+            for i in range(n_atoms):
+                x, y, z = self.geo[i]
+                elem = self.elements[i].capitalize()
+                f.write(f"{x:10.4f}{y:10.4f}{z:10.4f} {elem:<3} 0  0  0  0  0  0  0  0  0  0  0  0\n")
+            # Bond block
+            for i, j, order in bonds:
+                # Atom indices in mol files are 1-based
+                f.write(f"{i+1:>3}{j+1:>3}{order:>3}  0  0  0  0\n")
+            # End marker
+            f.write("M  END\n")
+        return
+
     # dunders
     def __eq__(self, other):
         return self.hash == other.hash
@@ -303,7 +374,7 @@ class yarpecule:
     def __len__(self):
         return len(self.elements)
 
-def draw_yarpecules(yarpecules,name,label_ind=False,mol_labels=None):
+def draw_yarpecules(yarpecules,name,label_ind=False,mol_labels=None, return_img=False):
     """
     Wrapper for drawing main bond_mat of a set of yarpecules using rdkit.
 
@@ -390,14 +461,30 @@ def draw_yarpecules(yarpecules,name,label_ind=False,mol_labels=None):
     else:
         n_per_row = 3
     if mol_labels:
-        img = Draw.MolsToGridImage(mols,subImgSize=(400, 400),molsPerRow=n_per_row,legends=[ str(_) for _ in mol_labels], useSVG=False, returnPNG=False)
+        img = Draw.MolsToGridImage(mols,subImgSize=(400, 400),molsPerRow=n_per_row,legends=[ str(_) for _ in mol_labels])
     else:
-        img = Draw.MolsToGridImage(mols,subImgSize=(400, 400),molsPerRow=n_per_row, useSVG=False, returnPNG=False)        
-    img.save(name)
-    return
+        img = Draw.MolsToGridImage(mols,subImgSize=(400, 400),molsPerRow=n_per_row)  
+
+    if return_img:
+        return img
+    else:
+        # Handle PIL Image
+        if hasattr(img, "save"):
+            img.save(name)
+        # Handle numpy array
+        elif isinstance(img, np.ndarray):
+            Image.fromarray(img).save(name)
+        # Handle IPython display Image (e.g., in Jupyter)
+        elif isinstance(img, IPythonImage):
+            # img.data is bytes (for PNG)
+            with open(name, "wb") as f:
+                f.write(img.data)
+        else:
+            raise TypeError("The image object returned by Draw.MolsToGridImage cannot be saved directly.")
+        return
         
         
-def draw_bmats(yarpecule,name):
+def draw_bmats(yarpecule,name, return_img=False):
     """
     Wrapper for drawing the bond_mats of a yarpecule using rdkit.
 
@@ -456,8 +543,25 @@ def draw_bmats(yarpecule,name):
         n_per_row = 3
     # save the molecule
     img = Draw.MolsToGridImage(mols,subImgSize=(400, 400),molsPerRow=n_per_row,legends=["score: {: <4.3f}".format(_) for _ in yarpecule.bond_mat_scores ])
-    img.save(name)
-    return
+    
+    if return_img:
+        return img
+
+    else:
+        # Handle PIL Image
+        if hasattr(img, "save"):
+            img.save(name)
+        # Handle numpy array
+        elif isinstance(img, np.ndarray):
+            Image.fromarray(img).save(name)
+        # Handle IPython display Image (e.g., in Jupyter)
+        elif isinstance(img, IPythonImage):
+            # img.data is bytes (for PNG)
+            with open(name, "wb") as f:
+                f.write(img.data)
+        else:
+            raise TypeError("The image object returned by Draw.MolsToGridImage cannot be saved directly.")
+        return
 
 # Generate model compounds using bond-electron matrix with truncated graph and homolytic bond cleavages
 def generate_model_compound(index):

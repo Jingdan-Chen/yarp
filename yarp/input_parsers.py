@@ -265,7 +265,7 @@ def xyz_from_smiles(smiles,mode="rdkit"):
             adj_mat[i[1],i[0]] = 1        
     return elements,geo,adj_mat,q
 
-def mol_parse(mol):
+def mol_parse(mol, sanitize=True):
     """
     A simple wrapper for rdkit function to read a mol file.
     
@@ -281,7 +281,7 @@ def mol_parse(mol):
                                  generated geometry, `adj_mat` is an nxn array holding the adjacency matrix, `q` is an `int`
                                  holding the charge (based on the sum of formal charges).
     """
-    m=rdmolfiles.MolFromMolFile(mol)
+    m=rdmolfiles.MolFromMolFile(mol, sanitize=sanitize)
     N_atoms=len(m.GetAtoms())
     elements=[]
     geo=np.zeros((N_atoms, 3))
