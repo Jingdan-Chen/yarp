@@ -48,7 +48,7 @@ coverage.xml
 cover/
 RESULT/
 #*.p
-
+._build
 # Sphinx documentation
 docs/_build/
 
