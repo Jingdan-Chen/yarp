@@ -16,6 +16,7 @@ from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnum
 from rdkit.ML.Cluster import Butina
 import fnmatch
 from wrappers.xtb import *
+import uuid
 def geometry_opt(molecule):
     '''
     geometry optimization on yarp class
@@ -434,15 +435,18 @@ def return_inchikey(molecule):
         mol.geo=np.zeros([N_atom, 3])
         mol.adj_mat=adj_mat[group][:, group]
         for count_i, i in enumerate(group): mol.geo[count_i, :]=G[i, :]
-        mol_write_yp(".tmp.mol", mol)
-        mol=next(pybel.readfile("mol", ".tmp.mol"))
+        # generate a random string for the tmp mol file
+        random_string=str(uuid.uuid4())
+        tmp_mol_file=f".{random_string}.tmp.mol"
+        mol_write_yp(tmp_mol_file, mol)
+        mol=next(pybel.readfile("mol", tmp_mol_file))
         try:
             inchi=mol.write(format='inchikey').strip().split()[0]
         except:
             print(f"{mol.write(format='inchikey')}")
             continue
         inchikey+=[inchi]
-        os.system("rm .tmp.mol")
+        os.system(f"rm {tmp_mol_file}")
     if len(inchikey)==0:
         return "ERROR"
     elif len(groups) == 1:
