@@ -21,7 +21,9 @@ def geometry_opt(molecule):
     '''
     geometry optimization on yarp class
     '''
-    mol_file='.tmp.mol'
+    # generate a random string for the tmp mol file
+    random_string=str(uuid.uuid4())
+    mol_file=f".{random_string}.tmp.mol"
     mol_write_yp(mol_file, molecule, append_opt=False)
     mol=next(pybel.readfile("mol", mol_file))
     mol.localopt(forcefield='uff')
