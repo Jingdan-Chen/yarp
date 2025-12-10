@@ -353,7 +353,7 @@ def return_smi(E,G,bond_mat=None,namespace='obabel'):
 
     return smile
 
-def return_smi_yp(molecule, namespace="obabel"):
+def return_smi_yp(molecule, namespace=f"obabel_{str(uuid.uuid4())}"):
     mol_write_yp(f"{namespace}_input.mol",molecule)
     mol=next(pybel.readfile("mol", f"{namespace}_input.mol"))
     smile=mol.write(format="can").strip().split()[0]
